@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { api, qs } from '../lib/api';
@@ -23,7 +23,7 @@ export function AvailabilityChart({ level, id, name }: { level: string; id: stri
               <LineChart data={data} margin={{ left: -6, right: 8, top: 6 }}>
                 <CartesianGrid stroke="var(--line)" strokeDasharray="3 3" />
                 <XAxis dataKey="label" tick={{ fill: 'var(--muted)', fontSize: 10 }} />
-                <YAxis domain={[floor, 100]} tick={{ fill: 'var(--muted)', fontSize: 10 }} tickFormatter={(x) => Number(x).toFixed(1)} />
+                <YAxis domain={[floor, 100]} tick={{ fill: 'var(--muted)', fontSize: 10 }} tickFormatter={(x) => Number(x).toFixed(2)} />
                 <Tooltip contentStyle={{ background: 'var(--surface-2)', border: '1px solid var(--line)', fontSize: 11 }} formatter={(value: any, label: any) => [value === null || value === undefined ? 'Unknown' : `${Number(value).toFixed(3)}%`, label]} />
                 <Legend wrapperStyle={{ fontSize: 11 }} />
                 <Line name="Availability" dataKey="value" stroke="var(--primary)" strokeWidth={2} dot={{ r: 2 }} connectNulls={false} isAnimationActive={false} />
@@ -78,12 +78,13 @@ function WeightRow({ member, kind, canEdit, onSaved }: { member: any; kind: 'ser
     onSuccess: onSaved,
   });
   const valid = Number(weight) > 0;
+  useEffect(() => setWeight(String(member.weight)), [member.weight]);
   return (
     <tr className="border-b border-line/60">
       <td className="py-1 pr-2">{member.name}</td>
       <td className="pr-2">
         {canEdit ? (
-          <label className="flex items-center gap-1"><input type="checkbox" checked={member.included} disabled={save.isPending} onChange={(e) => save.mutate({ included: e.target.checked })} /> Included</label>
+          <label className="flex items-center gap-1"><input type="checkbox" checked={member.included} disabled={save.isPending} onChange={(e) => save.mutate({ included: e.target.checked })} /> {member.included ? 'Included' : 'Excluded'}</label>
         ) : member.included ? 'Included' : 'Excluded'}
       </td>
       <td className="pr-2 text-right">
@@ -119,7 +120,7 @@ function ContributionTable({ aggregate, kind, canEdit, onSaved, label }: { aggre
           </tr>
         </thead>
         <tbody>
-          {aggregate.contributions.map((m: any) => <WeightRow key={`${m.id}-${m.weight}-${m.included}`} member={m} kind={kind} canEdit={canEdit} onSaved={onSaved} />)}
+          {aggregate.contributions.map((m: any) => <WeightRow key={m.id} member={m} kind={kind} canEdit={canEdit} onSaved={onSaved} />)}
         </tbody>
         <tfoot>
           <tr className="font-semibold">

@@ -131,9 +131,22 @@ export function useFilters(viewKey: string) {
     });
   }, [setParams]);
 
+  /** Swaps the whole filter set, as when applying a saved view. */
+  const replace = useCallback(
+    (next: Record<string, string>) => {
+      setParams((prev) => {
+        const out = new URLSearchParams(next);
+        const customer = prev.get('customerId');
+        if (customer && !out.has('customerId')) out.set('customerId', customer);
+        return out;
+      });
+    },
+    [setParams],
+  );
+
   const activeCount = Object.keys(values).filter((k) => !TRANSIENT_KEYS.includes(k) && !['customerId', 'tab', 'sort', 'dir', 'groupBy'].includes(k)).length;
 
-  return { values, set, setMany, clear, activeCount, ready };
+  return { values, set, setMany, clear, replace, activeCount, ready };
 }
 
 export function useLocalSort<T extends Record<string, any>>(rows: T[], initial: string, initialDir: 'asc' | 'desc' = 'desc') {

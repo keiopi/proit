@@ -36,6 +36,16 @@ async function assertDesignatedApprover(db: Db, userId: string, customerId: stri
   }
 }
 
+/** Only objects of this customer with a Failed or Warning result for the control can be affected. */
+async function assertAffectedObjects(db: Db, customerId: string, controlId: string, objectIds: string[]): Promise<void> {
+  if (objectIds.length === 0) return;
+  const rows = await db.query<Row>(
+    `SELECT object_id FROM control_results WHERE customer_id = $1 AND control_id = $2 AND object_id = ANY($3::text[]) AND result IN ('failed', 'warning')`,
+    [customerId, controlId, objectIds],
+  );
+  if (rows.length !== objectIds.length) throw badRequest('Every affected object must have a Failed or Warning result for this control');
+}
+
 export interface RiskInput {
   controlResultId: string;
   objectIds?: string[];
@@ -68,8 +78,7 @@ export async function createRisk(db: Db, scope: Scope, user: SessionUser, input:
   await assertDesignatedApprover(db, input.approverId, result.customer_id, 'The approver');
 
   const objectIds = [...new Set([result.object_id, ...(input.objectIds ?? [])])];
-  const objects = await db.query<Row>('SELECT id FROM objects WHERE id = ANY($1::text[]) AND customer_id = $2', [objectIds, result.customer_id]);
-  if (objects.length !== objectIds.length) throw badRequest('Every affected object must belong to the same customer');
+  await assertAffectedObjects(db, result.customer_id, result.control_id, objectIds);
 
   const id = `RA-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
   await db.tx(async (tx) => {
@@ -105,12 +114,18 @@ export async function updateDraft(db: Db, scope: Scope, user: SessionUser, id: s
     risk_owner_id: patch.riskOwnerId ?? risk.risk_owner_id,
     approver_id: patch.approverId ?? risk.approver_id,
   };
+  const changed = [
+    ...(['justification', 'residual_risk', 'compensating_controls', 'risk_owner_id', 'approver_id'] as const).filter((k) => next[k] !== risk[k]),
+    ...(expiry.getTime() !== new Date(risk.expiry_at).getTime() ? ['expiry_at'] : []),
+    ...(review.getTime() !== new Date(risk.review_at).getTime() ? ['review_at'] : []),
+  ];
+  if (changed.length === 0) return risk;
   await db.tx(async (tx) => {
     await tx.query(
       `UPDATE risk_acceptances SET justification=$2, residual_risk=$3, compensating_controls=$4, risk_owner_id=$5, approver_id=$6, expiry_at=$7, review_at=$8, updated_at=$9 WHERE id=$1`,
       [id, next.justification, next.residual_risk, next.compensating_controls, next.risk_owner_id, next.approver_id, expiry, review, now],
     );
-    await writeAudit(tx, user, risk.customer_id, 'risk_acceptance', id, 'edited', { changed: Object.keys(patch) });
+    await writeAudit(tx, user, risk.customer_id, 'risk_acceptance', id, 'edited', { changed });
   });
   return getEntity(db, scope, 'risk', id, now);
 }
@@ -227,19 +242,20 @@ export async function changeRiskScope(db: Db, scope: Scope, user: SessionUser, i
   if (risk.status !== 'draft' && risk.status !== 'accepted') throw conflict('The affected scope can only change on a draft or an accepted request');
   const unique = [...new Set(objectIds)];
   if (unique.length === 0) throw badRequest('Choose at least one affected object');
-  const valid = await db.query<Row>('SELECT id FROM objects WHERE id = ANY($1::text[]) AND customer_id = $2', [unique, risk.customer_id]);
-  if (valid.length !== unique.length) throw badRequest('Every affected object must belong to the same customer');
   const before: string[] = risk.affected_objects.map((o: Row) => o.id);
   const added = unique.filter((o) => !before.includes(o));
   const removed = before.filter((o) => !unique.includes(o));
   if (added.length === 0 && removed.length === 0) return risk;
+  await assertAffectedObjects(db, risk.customer_id, risk.control_id, added);
+  const nameRows = await db.query<Row>('SELECT id, name FROM objects WHERE id = ANY($1::text[])', [[...added, ...removed]]);
+  const names = (ids: string[]) => ids.map((x) => nameRows.find((r) => r.id === x)?.name ?? x).join(', ') || 'none';
 
   await db.tx(async (tx) => {
     for (const objectId of removed) await tx.query('DELETE FROM risk_acceptance_objects WHERE acceptance_id = $1 AND object_id = $2', [id, objectId]);
     const approved = risk.status === 'draft';
     for (const objectId of added) await tx.query('INSERT INTO risk_acceptance_objects (acceptance_id, object_id, approved_scope) VALUES ($1, $2, $3)', [id, objectId, approved]);
     if (risk.status === 'accepted') {
-      const reviewReason = `Affected scope changed after the decision (added: ${added.join(', ') || 'none'}; removed: ${removed.join(', ') || 'none'}).`;
+      const reviewReason = `Affected scope changed after the decision (added: ${names(added)}; removed: ${names(removed)}).`;
       await tx.query('UPDATE risk_acceptances SET review_required = true, review_reason = $2, updated_at = $3 WHERE id = $1', [id, reviewReason, now]);
       await writeAudit(tx, user, risk.customer_id, 'risk_acceptance', id, 'review_required', { reason: reviewReason, added, removed });
       await notify(tx, [risk.risk_owner_id, risk.approver_id], risk.customer_id, 'risk_review', `Review required: ${risk.id}`, reviewReason, `/risk-acceptances?record=${risk.id}`, `risk-review-scope:${risk.id}:${now.getTime()}`);
@@ -263,13 +279,15 @@ export async function publishControlVersion(db: Db, scope: Scope, user: SessionU
   const flagged: string[] = [];
   await db.tx(async (tx) => {
     await tx.query('UPDATE controls SET version = $2 WHERE id = $1', [controlId, version]);
-    const affected = await tx.query<Row>(`SELECT * FROM risk_acceptances WHERE control_id = $1 AND status = 'accepted' AND customer_id = ANY($2::text[])`, [controlId, [...scope.customerIds]]);
+    // Controls are shared, so every customer's acceptance on the old version needs review.
+    // The caller only sees the ones inside their own scope.
+    const affected = await tx.query<Row>(`SELECT * FROM risk_acceptances WHERE control_id = $1 AND status = 'accepted'`, [controlId]);
     for (const a of affected) {
       const reason = `Control version changed from ${a.control_version} to ${version} after the decision.`;
       await tx.query('UPDATE risk_acceptances SET review_required = true, review_reason = $2, updated_at = $3 WHERE id = $1', [a.id, reason, now]);
       await writeAudit(tx, user, a.customer_id, 'risk_acceptance', a.id, 'review_required', { reason });
       await notify(tx, [a.risk_owner_id, a.approver_id], a.customer_id, 'risk_review', `Review required: ${a.id}`, reason, `/risk-acceptances?record=${a.id}`, `risk-review-version:${a.id}:${version}`);
-      flagged.push(a.id);
+      if (scope.customerIds.includes(a.customer_id)) flagged.push(a.id);
     }
   });
   return { version, flagged };

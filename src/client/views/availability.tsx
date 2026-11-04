@@ -31,7 +31,7 @@ export function AvailabilityView() {
   const [calcLevel, calcId] = v.calc ? v.calc.split(':') : [null, null];
 
   const chartLevel = v.level ?? (v.objectId ? 'object' : v.serviceId ? 'service' : 'customer');
-  const chartId = v.levelId ?? v.objectId ?? v.serviceId ?? customers[0]?.id;
+  const chartId = v.levelId ?? v.objectId ?? v.serviceId ?? (customers.find((c) => c.value !== null) ?? customers[0])?.id;
   const chartName = useMemo(() => {
     for (const c of customers) {
       if (c.id === chartId) return c.name;
@@ -44,7 +44,7 @@ export function AvailabilityView() {
   }, [customers, chartId]);
 
   const columns: Column<any>[] = [
-    { key: 'name', label: 'Object', sortKey: 'name', render: (r) => <button type="button" className="font-medium text-primary underline-offset-2 hover:underline" onClick={() => calc('object', r.id)}>{r.name}</button> },
+    { key: 'name', label: 'Object', sortKey: 'name', render: (r) => <button type="button" className="whitespace-nowrap font-medium text-primary underline-offset-2 hover:underline" onClick={() => calc('object', r.id)}>{r.name}</button> },
     { key: 'customer', label: 'Customer', sortKey: 'customer_name', render: (r) => r.customer_name },
     { key: 'service', label: 'Service', sortKey: 'service_name', render: (r) => r.service_name },
     { key: 'current', label: 'Current', sortKey: 'current_status', render: (r) => <StatusBadge value={r.current_status} /> },
@@ -63,7 +63,7 @@ export function AvailabilityView() {
   return (
     <>
       <PageHeader title="Availability & SLA" description={query.data ? `Period: ${query.data.period.label}, boundaries in ${query.data.period.timezone}. Results are calculated up to the current time.` : undefined} />
-      <FilterBar filters={filters} viewKey="availability" fields={['service', 'system', 'object', 'os', 'status', 'period']} facets={{ status: statusFacet }} statusLabelText="SLA status" />
+      <FilterBar filters={filters} viewKey="availability" fields={['service', 'system', 'object', 'os', 'status', 'period']} facets={{ status: statusFacet }} statusLabelText="SLA status" periodRequired />
       {query.isLoading && <Loader />}
       {query.isError && <ErrorState error={query.error} onRetry={() => query.refetch()} />}
       {query.data && customers.length === 0 && <EmptyState title="No customers in this scope" />}

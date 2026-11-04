@@ -350,12 +350,11 @@ describe('risk state transitions', () => {
   it('flags review when the scope changes and does not cover the new object', async () => {
     const owner = await ctx.login(RISK_OWNER);
     const current = (await owner.get('/api/records/risk/RA-NBF-SLF')).body.record;
-    const objects = await ctx.db.query(`SELECT id FROM objects WHERE customer_id = 'northbridge' AND id <> ALL($1::text[]) LIMIT 1`, [current.object_ids]);
+    const objects = await ctx.db.query(`SELECT id FROM objects WHERE customer_id = 'northbridge' AND id NOT IN (SELECT object_id FROM control_results WHERE control_id = $1) LIMIT 1`, [current.control_id]);
     const added = objects[0].id;
     await ctx.db.query(
       `INSERT INTO control_results (id, customer_id, service_id, system_id, object_id, control_id, result, actual_result, evidence, scanned_at)
-       SELECT 'CR-TEST', customer_id, service_id, system_id, id, $1, 'failed', 'x', 'x', now() FROM objects WHERE id = $2
-       ON CONFLICT (object_id, control_id) DO NOTHING`,
+       SELECT 'CR-TEST', customer_id, service_id, system_id, id, $1, 'failed', 'x', 'x', now() FROM objects WHERE id = $2`,
       [current.control_id, added],
     );
     const res = await owner.post('/api/risk/RA-NBF-SLF/scope').send({ objectIds: [...current.object_ids, added] });
@@ -364,6 +363,7 @@ describe('risk state transitions', () => {
     expect(res.body.effective).toBe(false);
     expect(res.body.buckets).toContain('review_required');
     expect(res.body.affected_objects.find((o: any) => o.id === added).approved_scope).toBe(false);
+    expect(res.body.review_reason).not.toMatch(/obj-/);
 
     const results = await owner.get(`/api/records/hardening?objectId=${added}&pageSize=500`);
     const row = results.body.rows.find((r: any) => r.control_id === current.control_id);
@@ -383,6 +383,38 @@ describe('risk state transitions', () => {
     expect(after.review_required).toBe(true);
     expect(after.review_reason).toMatch(/Control version changed/);
     expect(after.status).toBe('accepted');
+  });
+
+  it('refuses affected objects without a Failed or Warning result for the control', async () => {
+    const owner = await ctx.login(RISK_OWNER);
+    const risk = (await owner.get('/api/records/risk/RA-NBF-RVW')).body.record;
+    const other = await ctx.db.query(`SELECT id FROM objects WHERE customer_id = 'northbridge' AND id NOT IN (SELECT object_id FROM control_results WHERE control_id = $1) LIMIT 1`, [risk.control_id]);
+    const res = await owner.post('/api/risk/RA-NBF-RVW/scope').send({ objectIds: [...risk.object_ids, other[0].id] });
+    expect(res.status).toBe(400);
+  });
+
+  it('records only the fields that really changed on a draft', async () => {
+    const { agent, id } = await draft();
+    await agent.patch(`/api/risk/${id}`).send({ justification: 'Only this changed', residualRisk: 'medium', riskOwnerId: RISK_OWNER });
+    const detail = await agent.get(`/api/records/risk/${id}`);
+    expect(detail.body.audit.at(-1).detail.changed).toEqual(['justification']);
+    await agent.patch(`/api/risk/${id}`).send({ justification: 'Only this changed' });
+    expect((await agent.get(`/api/records/risk/${id}`)).body.audit).toHaveLength(detail.body.audit.length);
+  });
+
+  it('flags acceptances outside the administrator scope without revealing them', async () => {
+    const admin = await ctx.login(ADMIN);
+    await admin.post('/api/me/portfolio-mode').send({ mode: 'own' });
+    const rows = await ctx.db.query(`
+      SELECT a.id, a.control_id FROM risk_acceptances a
+      WHERE a.customer_id = 'northbridge' AND a.status = 'accepted' AND a.review_required = false
+        AND EXISTS (SELECT 1 FROM control_results r WHERE r.control_id = a.control_id AND r.customer_id IN ('ironvale', 'cedar')) LIMIT 1`);
+    expect(rows[0]).toBeTruthy();
+    const res = await admin.post(`/api/admin/controls/${rows[0].control_id}/new-version`).send({});
+    expect(res.status).toBe(200);
+    expect(res.body.flagged).not.toContain(rows[0].id);
+    const flagged = await ctx.db.query('SELECT review_required FROM risk_acceptances WHERE id = $1', [rows[0].id]);
+    expect(flagged[0].review_required).toBe(true);
   });
 
   it('expires nothing that is still in date', async () => {
@@ -514,6 +546,16 @@ describe('persistence and audit', () => {
     expect(detail.body.audit.at(-1).detail.before.entitlement).toBe(500);
   });
 
+  it('does not rewrite or audit a license saved without changes', async () => {
+    const agent = await ctx.login(CUSTOMER);
+    const before = (await agent.get('/api/records/licenses/LIC-NBF-3')).body;
+    const res = await agent.patch('/api/licenses/LIC-NBF-3').send({ owner: before.record.owner });
+    expect(res.status).toBe(200);
+    const after = (await agent.get('/api/records/licenses/LIC-NBF-3')).body;
+    expect(after.audit).toHaveLength(before.audit.length);
+    expect(after.record.renewal_at).toBe(before.record.renewal_at);
+  });
+
   it('keeps preferences and saved views separate per account', async () => {
     const nora = await ctx.login(CUSTOMER);
     const ivan = await ctx.login('u-ivan');
@@ -572,6 +614,25 @@ describe('integrations', () => {
   });
 });
 
+describe('lists', () => {
+  it('sorts severity by rank rather than alphabetically', async () => {
+    const agent = await ctx.login(CUSTOMER);
+    const res = await agent.get('/api/records/requests?sort=priority&dir=desc&pageSize=500');
+    const order = ['critical', 'high', 'medium', 'low'];
+    const ranks = res.body.rows.map((r: any) => order.indexOf(r.priority));
+    expect(ranks).toEqual([...ranks].sort((a: number, b: number) => a - b));
+  });
+
+  it('counts each facet with the other filter applied', async () => {
+    const agent = await ctx.login(CUSTOMER);
+    const res = await agent.get('/api/records/alarms?status=open&severity=critical&pageSize=500');
+    expect(res.body.facets.severity.critical).toBe(res.body.total);
+    expect(res.body.facets.status.resolved).toBe(
+      (await agent.get('/api/records/alarms?status=resolved&severity=critical&pageSize=500')).body.total,
+    );
+  });
+});
+
 describe('seed coverage and consistency', () => {
   const values = async (sql: string) => new Set((await ctx.db.query(sql)).map((r: any) => r.v));
 
@@ -615,6 +676,11 @@ describe('seed coverage and consistency', () => {
       expect(r.passed).toBe(r.real_passed);
       expect(r.failed).toBe(r.real_failed);
     }
+  });
+
+  it('never ends a product life before its extended support', async () => {
+    const bad = await ctx.db.query('SELECT id FROM lifecycle_records WHERE eol_at < extended_at OR eol_at < eos_at');
+    expect(bad).toEqual([]);
   });
 
   it('links every risk acceptance to a real Failed or Warning result', async () => {

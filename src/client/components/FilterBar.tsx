@@ -15,8 +15,16 @@ interface Props {
   facets?: { status?: Record<string, number>; severity?: Record<string, number> };
   statusLabelText?: string;
   allowOpen?: boolean;
+  /** The view always reports on a period, so there is no All time option. */
+  periodRequired?: boolean;
   children?: React.ReactNode;
 }
+
+const FACET_ORDER = ['critical', 'high', 'warning', 'medium', 'low'];
+const facetRank = (k: string) => {
+  const i = FACET_ORDER.indexOf(k);
+  return i === -1 ? FACET_ORDER.length : i;
+};
 
 const PERIODS = [
   ['current_month', 'Current month'],
@@ -42,7 +50,7 @@ function SelectFilter({ label, value, onChange, options, allLabel }: { label: st
   );
 }
 
-export function FilterBar({ filters, viewKey, fields, facets, statusLabelText = 'Status', allowOpen, children }: Props) {
+export function FilterBar({ filters, viewKey, fields, facets, statusLabelText = 'Status', allowOpen, periodRequired, children }: Props) {
   const { values, set, clear, activeCount } = filters;
   const options = useFilterOptions();
   const o = options.data ?? { services: [], systems: [], objects: [], os: [] };
@@ -51,7 +59,7 @@ export function FilterBar({ filters, viewKey, fields, facets, statusLabelText = 
   const systems = o.systems.filter((r: any) => inCustomer(r) && (!values.serviceId || r.service_id === values.serviceId));
   const objects = o.objects.filter((r: any) => inCustomer(r) && (!values.serviceId || r.service_id === values.serviceId) && (!values.systemId || r.system_id === values.systemId));
   const toOption = (r: any) => ({ value: r.id, label: r.name });
-  const facetOptions = (facet?: Record<string, number>) => Object.entries(facet ?? {}).map(([k, n]) => ({ value: k, label: `${statusLabel(k)} (${n})` }));
+  const facetOptions = (facet?: Record<string, number>) => Object.entries(facet ?? {}).sort(([a], [b]) => facetRank(a) - facetRank(b) || a.localeCompare(b)).map(([k, n]) => ({ value: k, label: `${statusLabel(k)} (${n})` }));
 
   const statusOptions = facetOptions(facets?.status);
   if (values.status && values.status !== 'open' && !statusOptions.some((s) => s.value === values.status)) statusOptions.push({ value: values.status, label: `${statusLabel(values.status)} (0)` });
@@ -76,7 +84,16 @@ export function FilterBar({ filters, viewKey, fields, facets, statusLabelText = 
       {fields.includes('status') && <SelectFilter label={statusLabelText} value={values.status} onChange={(v) => set('status', v)} options={statusOptions} allLabel="All" />}
       {fields.includes('period') && (
         <>
-          <SelectFilter label="Period" value={values.period} onChange={(v) => set('period', v)} options={PERIODS.map(([value, label]) => ({ value, label }))} allLabel="All time" />
+          {periodRequired ? (
+            <label className="flex items-center gap-1 text-[11px] text-muted">
+              <span>Period</span>
+              <select value={values.period ?? 'current_month'} onChange={(e) => set('period', e.target.value)}>
+                {PERIODS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+              </select>
+            </label>
+          ) : (
+            <SelectFilter label="Period" value={values.period} onChange={(v) => set('period', v)} options={PERIODS.map(([value, label]) => ({ value, label }))} allLabel="All time" />
+          )}
           {values.period === 'custom' && (
             <>
               <label className="flex items-center gap-1 text-[11px] text-muted">
@@ -142,7 +159,7 @@ function SavedViews({ viewKey, filters }: { viewKey: string; filters: Filters })
             {views.map((v) => (
               <li key={v.id} className="flex items-center gap-1">
                 <Popover.Close asChild>
-                  <button type="button" className="flex-1 truncate rounded px-1 py-0.5 text-left hover:bg-surface" onClick={() => { filters.clear(); filters.setMany(v.params); }}>
+                  <button type="button" className="flex-1 truncate rounded px-1 py-0.5 text-left hover:bg-surface" onClick={() => filters.replace(v.params)}>
                     {v.name}
                   </button>
                 </Popover.Close>

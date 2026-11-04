@@ -50,7 +50,13 @@ export function RiskAcceptanceForm({ result, draft, onDone, onCancel }: { result
 
   const save = useMutation({
     mutationFn: async (submit: boolean) => {
-      const common = { justification, residualRisk, compensatingControls: compensating, riskOwnerId: effectiveOwner, approverId: effectiveApprover, expiryAt: endOfDay(expiry), reviewAt: endOfDay(review) };
+      const unchanged = (date: string, current: unknown) => !!draft && date === toDateInput(current);
+      const common = {
+        justification, residualRisk, compensatingControls: compensating, riskOwnerId: effectiveOwner, approverId: effectiveApprover,
+        // An untouched date keeps its exact stored time rather than moving to the end of the day.
+        ...(unchanged(expiry, draft?.expiry_at) ? {} : { expiryAt: endOfDay(expiry) }),
+        ...(unchanged(review, draft?.review_at) ? {} : { reviewAt: endOfDay(review) }),
+      };
       let risk = draft
         ? await api.patch(`/api/risk/${draft.id}`, common)
         : await api.post('/api/risk', { ...common, controlResultId: result.id, objectIds });
@@ -124,8 +130,8 @@ export function RiskAcceptanceForm({ result, draft, onDone, onCancel }: { result
       </div>
       {save.isError && <ErrorState error={save.error} />}
       <div className="flex flex-wrap gap-1.5">
-        <Button disabled={save.isPending || !justification.trim()} onClick={() => save.mutate(false)}>Save draft</Button>
-        <Button variant="primary" disabled={save.isPending || !justification.trim() || !compensating.trim()} onClick={() => save.mutate(true)}>Save and submit for approval</Button>
+        <Button disabled={save.isPending || !justification.trim() || objectIds.length === 0} onClick={() => save.mutate(false)}>Save draft</Button>
+        <Button variant="primary" disabled={save.isPending || !justification.trim() || !compensating.trim() || objectIds.length === 0} onClick={() => save.mutate(true)}>Save and submit for approval</Button>
         <Button variant="ghost" onClick={onCancel}>Cancel</Button>
       </div>
     </form>
@@ -153,7 +159,7 @@ function ScopeEditor({ risk, onDone }: { risk: any; onDone: () => void }) {
   const invalidate = useInvalidateRisk();
   const objects = useQuery({ queryKey: ['control-peers', risk.customer_id, risk.control_id], queryFn: () => api.get(`/api/records/hardening${qs({ customerId: risk.customer_id, pageSize: 500 })}`) });
   const [selected, setSelected] = useState<string[]>(risk.object_ids);
-  const rows = (objects.data?.rows ?? []).filter((r: any) => r.control_id === risk.control_id);
+  const rows = (objects.data?.rows ?? []).filter((r: any) => r.control_id === risk.control_id && (r.result === 'failed' || r.result === 'warning' || risk.object_ids.includes(r.object_id)));
   const save = useMutation({
     mutationFn: () => api.post(`/api/risk/${risk.id}/scope`, { objectIds: selected }),
     onSuccess: async () => {

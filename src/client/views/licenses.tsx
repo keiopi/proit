@@ -92,7 +92,8 @@ function LicenseEditor({ record }: { record: any }) {
       assigned: num(form.assigned),
       consumption: num(form.consumption),
       completeness: num(form.completeness),
-      renewal_at: `${form.renewal_at}T00:00:00.000Z`,
+      // An untouched date keeps its exact stored time.
+      ...(form.renewal_at === toDateInput(record.renewal_at) ? {} : { renewal_at: `${form.renewal_at}T00:00:00.000Z` }),
       contract_ref: form.contract_ref,
     }),
     onSuccess: () => {

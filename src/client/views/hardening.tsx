@@ -33,7 +33,7 @@ export function HardeningSummary({ data, level, onLevel }: { data: any; level: s
     { key: 'scan', label: 'Last scan', sortKey: 'last_scan', render: (r) => <span className="whitespace-nowrap">{r.last_scan ? fmtDate(r.last_scan) : <Unavailable>No scan</Unavailable>}</span> },
   ];
   return (
-    <div className="mb-3 grid gap-3 xl:grid-cols-[minmax(0,3fr)_minmax(0,1fr)]">
+    <div className="mb-3 grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,3fr)_minmax(0,1fr)]">
       <Panel
         title="Compliance"
         actions={

@@ -197,7 +197,7 @@ const CONTROLS: Record<ObjectType, [string, string, string, string][]> = {
 
 const OS_LIFECYCLE: Record<string, { vendor: string; product: string; version: string; eol: number | null; eos: number | null; ext: number | null; verified: boolean; source: string | null }> = {
   [WIN22]: { vendor: 'Microsoft', product: 'Windows Server', version: '2022', eol: 1800, eos: 1000, ext: 1800, verified: true, source: 'Vendor lifecycle page (demo)' },
-  [WIN12]: { vendor: 'Microsoft', product: 'Windows Server', version: '2012 R2', eol: -300, eos: -400, ext: 250, verified: true, source: 'Vendor lifecycle page (demo)' },
+  [WIN12]: { vendor: 'Microsoft', product: 'Windows Server', version: '2012 R2', eol: 250, eos: -400, ext: 250, verified: true, source: 'Vendor lifecycle page (demo)' },
   [RHEL9]: { vendor: 'Red Hat', product: 'Red Hat Enterprise Linux', version: '9', eol: 2200, eos: 1500, ext: 2200, verified: true, source: 'Vendor lifecycle page (demo)' },
   [RHEL7]: { vendor: 'Red Hat', product: 'Red Hat Enterprise Linux', version: '7', eol: 300, eos: -200, ext: 300, verified: true, source: 'Vendor lifecycle page (demo)' },
   [UBU22]: { vendor: 'Canonical', product: 'Ubuntu', version: '22.04 LTS', eol: 1200, eos: 120, ext: 1200, verified: true, source: 'Vendor release notes (demo)' },
@@ -492,8 +492,8 @@ export async function seed(db: Db, now: Date = new Date()): Promise<void> {
     const userById = new Map<string, (typeof USERS)[number]>(USERS.map((u) => [u[0], u]));
     let auditSeq = 0;
     const log = (actorId: string, customer_id: string, entity_id: string, action: string, at: Date, detail: Record<string, unknown> = {}) => {
-      const u = userById.get(actorId)!;
-      audit.push({ id: `seed-audit-${++auditSeq}`, at, actor_id: actorId, actor_name: u[1], actor_role: u[4], customer_id, entity: 'risk_acceptance', entity_id, action, detail: JSON.stringify(detail) });
+      const u = userById.get(actorId);
+      audit.push({ id: `seed-audit-${++auditSeq}`, at, actor_id: actorId, actor_name: u?.[1] ?? 'System', actor_role: u?.[4] ?? 'admin', customer_id, entity: 'risk_acceptance', entity_id, action, detail: JSON.stringify(detail) });
     };
 
     for (const c of CATALOG) {
@@ -534,7 +534,7 @@ export async function seed(db: Db, now: Date = new Date()): Promise<void> {
           log(c.riskOwner, c.id, id, firstDecision, decided, { from: 'pending', to: plan.status === 'rejected' ? 'rejected' : 'accepted', reason: plan.status === 'rejected' ? plan.reason : undefined, self_approved: plan.selfApproved === true });
         }
         if (plan.status === 'revoked') log(c.riskOwner, c.id, id, 'revoked', ago(5), { from: 'accepted', to: 'revoked', reason: plan.reason });
-        if (plan.status === 'expired') log(c.riskOwner, c.id, id, 'expired', ahead(plan.expiry), { from: 'accepted', to: 'expired' });
+        if (plan.status === 'expired') log('system', c.id, id, 'expired', ahead(plan.expiry), { from: 'accepted', to: 'expired' });
         if (plan.reviewRequired) log(c.riskOwner, c.id, id, 'review_required', ago(3), { reason: `Control version changed from ${versionOutdated} to ${controlRow.version}.` });
       });
     }

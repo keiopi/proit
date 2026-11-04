@@ -332,15 +332,19 @@ export function createApp(db: Db): express.Express {
       contract_ref: body.contract_ref ?? record.contract_ref,
     };
     const measuredAt = consumption === null ? null : measuredChanged ? new Date() : record.measured_at;
+    const auditView = (v: { owner: unknown; entitlement: unknown; assigned: unknown; consumption: unknown; completeness: unknown; contract_ref: unknown }, renewalAt: unknown, validAt: unknown) => ({
+      owner: v.owner, entitlement: v.entitlement, assigned: v.assigned, consumption: v.consumption, completeness: v.completeness, contract_ref: v.contract_ref,
+      renewal_at: new Date(renewalAt as string).toISOString(), valid_from: new Date(validAt as string).toISOString(),
+    });
+    const auditBefore = auditView(record as any, record.renewal_at, record.valid_from);
+    const auditAfter = auditView(next, renewal, validFrom);
+    if (JSON.stringify(auditBefore) === JSON.stringify(auditAfter)) return void res.json(record);
     await db.tx(async (tx) => {
       await tx.query(
         `UPDATE licenses SET owner=$2, entitlement=$3, assigned=$4, consumption=$5, completeness=$6, contract_ref=$7, renewal_at=$8, valid_from=$9, measured_at=$10, updated_at=now() WHERE id=$1`,
         [record.id, next.owner, next.entitlement, next.assigned, next.consumption, next.completeness, next.contract_ref, renewal, validFrom, measuredAt],
       );
-      await writeAudit(tx, req.user, record.customer_id, 'licenses', record.id, 'edited', {
-        before: { owner: record.owner, entitlement: record.entitlement, assigned: record.assigned, consumption: record.consumption, renewal_at: record.renewal_at },
-        after: { ...next, renewal_at: renewal },
-      });
+      await writeAudit(tx, req.user, record.customer_id, 'licenses', record.id, 'edited', { before: auditBefore, after: auditAfter });
     });
     res.json(await getEntity(db, req.scope, 'licenses', record.id));
   });

@@ -23,12 +23,18 @@ export function EmptyState({ title, hint, action }: { title: string; hint?: stri
   );
 }
 
+/** Retrying cannot change a not-found or validation answer. */
+const isClientError = (error: unknown) => {
+  const status = (error as { status?: number })?.status;
+  return status !== undefined && status >= 400 && status < 500;
+};
+
 export function ErrorState({ error, onRetry }: { error: unknown; onRetry?: () => void }) {
   return (
     <div role="alert" className="m-3 flex flex-wrap items-center gap-3 rounded border border-bad bg-bad-bg p-3 text-bad">
       <AlertCircle size={16} aria-hidden />
       <span className="flex-1">{(error as Error)?.message ?? 'Something went wrong'}</span>
-      {onRetry && (
+      {onRetry && !isClientError(error) && (
         <Button onClick={onRetry}>
           <RefreshCw size={12} aria-hidden /> Retry
         </Button>
@@ -132,7 +138,7 @@ export function HoverCard({ trigger, children }: { trigger: ReactNode; children:
 
 export function Panel({ title, actions, children, className = '' }: { title?: ReactNode; actions?: ReactNode; children: ReactNode; className?: string }) {
   return (
-    <section className={`rounded border border-line bg-surface ${className}`}>
+    <section className={`min-w-0 rounded border border-line bg-surface ${className}`}>
       {(title || actions) && (
         <header className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-3 py-2">
           <h2 className="text-xs font-semibold uppercase tracking-wide text-muted">{title}</h2>

@@ -39,7 +39,7 @@ export function LoginView() {
                   {a.name} <LogIn size={13} aria-hidden className="text-muted" />
                 </span>
                 <span className="text-muted">{a.title}</span>
-                <span>{ROLE_LABEL[a.role]}</span>
+                {a.title !== ROLE_LABEL[a.role] && <span>{ROLE_LABEL[a.role]}</span>}
                 <span className="text-muted">
                   Scope: {a.scope.join(', ')}
                   {a.canSwitchToAll && '. Can switch to all customers'}

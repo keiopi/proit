@@ -26,7 +26,7 @@ export function OverviewView() {
   return (
     <>
       <PageHeader title="Overview" description={d ? `SLA reporting period: ${d.period.label} (${d.period.timezone}). Other figures show the current state.` : undefined} />
-      <FilterBar filters={filters} viewKey="overview" fields={['period']} />
+      <FilterBar filters={filters} viewKey="overview" fields={['period']} periodRequired />
       {query.isLoading && <Loader />}
       {query.isError && <ErrorState error={query.error} onRetry={() => query.refetch()} />}
       {k && (
@@ -55,7 +55,7 @@ export function OverviewView() {
             <KpiCard label="Risk acceptances" value={`${k.risk.pending} / ${k.risk.expiring}`} sub={`Pending / expiring, ${k.risk.reviewRequired} need review`} tone={k.risk.reviewRequired ? 'warn' : 'default'} to={carry('/risk-acceptances', { bucket: 'pending' })} />
           </div>
 
-          <div className="grid gap-3 xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
+          <div className="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
             <Panel title="Attention list">
               {d.attention.length === 0 && <EmptyState title="Nothing needs attention" />}
               <ol>
@@ -125,7 +125,7 @@ export function PortfolioView() {
   return (
     <>
       <PageHeader title="Portfolio" description="Drill down from customer to service, system and object. Availability uses the selected reporting period in UTC." />
-      <FilterBar filters={filters} viewKey="portfolio" fields={['period']} />
+      <FilterBar filters={filters} viewKey="portfolio" fields={['period']} periodRequired />
       <nav aria-label="Breadcrumb" className="mb-2 flex flex-wrap items-center gap-1 text-xs">
         <button type="button" className="text-primary underline" onClick={() => crumb(null)}>All customers in scope</button>
         {data?.trail.map((t: any, i: number) => (

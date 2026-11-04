@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { ExternalLink, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
-import { fmtDateTime, humanize } from '../lib/format';
+import { fmtDate, fmtDateTime, humanize } from '../lib/format';
 import { useCarry } from '../lib/hooks';
 import { Button, ErrorState, Loader, Section, StatusBadge } from './ui';
 
@@ -90,7 +90,7 @@ export function AuditHistory({ audit, title = 'Audit history' }: { audit: any[];
                 <span className="num text-muted">{fmtDateTime(a.at)}</span>
               </div>
               <div className="text-muted">
-                {a.actor_name} ({a.actor_role === 'admin' ? 'System Administrator' : a.actor_role === 'manager' ? 'Customer Manager' : 'Customer'})
+                {a.actor_name === 'System' ? 'Automatic, by the system' : `${a.actor_name} (${a.actor_role === 'admin' ? 'System Administrator' : a.actor_role === 'manager' ? 'Customer Manager' : 'Customer'})`}
               </div>
               <AuditDetail detail={a.detail} />
             </li>
@@ -99,6 +99,11 @@ export function AuditHistory({ audit, title = 'Audit history' }: { audit: any[];
       )}
     </Section>
   );
+}
+
+function auditValue(value: unknown): string {
+  if (value === null || value === undefined || value === '') return 'empty';
+  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(value) ? fmtDate(value) : String(value);
 }
 
 function AuditDetail({ detail }: { detail: Record<string, any> }) {
@@ -112,7 +117,7 @@ function AuditDetail({ detail }: { detail: Record<string, any> }) {
     for (const key of Object.keys(detail.after)) {
       const before = detail.before[key];
       const after = detail.after[key];
-      if (key in detail.before && JSON.stringify(before) !== JSON.stringify(after)) notes.push(`${humanize(key)}: "${before ?? 'empty'}" to "${after ?? 'empty'}"`);
+      if (key in detail.before && JSON.stringify(before) !== JSON.stringify(after)) notes.push(`${humanize(key)}: "${auditValue(before)}" to "${auditValue(after)}"`);
     }
   }
   if (detail.renewed_from) notes.push(`Renewal of ${detail.renewed_from}`);

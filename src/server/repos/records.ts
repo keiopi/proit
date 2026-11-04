@@ -225,6 +225,9 @@ function compare(a: unknown, b: unknown): number {
   return String(a).localeCompare(String(b));
 }
 
+const RANKED_FIELDS = ['severity', 'priority', 'residual_risk'];
+const RANK: Record<string, number> = { low: 1, medium: 2, warning: 2.5, high: 3, critical: 4 };
+
 const countBy = (rows: Row[], field: string) => {
   const counts: Record<string, number> = {};
   for (const r of rows) {
@@ -266,23 +269,27 @@ export async function listEntity(db: Db, scope: Scope, entity: string, p: ListPa
     rows = rows.filter((r) => def.search.some((f) => String(r[f] ?? '').toLowerCase().includes(needle)));
   }
 
-  // Facets come from rows that are already scoped, so they cannot reveal other customers.
-  const facets = { status: countBy(rows, def.statusField), severity: countBy(rows, 'severity') };
-
-  if (p.status === 'open') rows = rows.filter((r) => !(def.closed ?? []).includes(r[def.statusField]));
-  else if (p.status) rows = rows.filter((r) => r[def.statusField] === p.status);
-  if (p.severity) rows = rows.filter((r) => r.severity === p.severity);
   if (p.bucket) rows = rows.filter((r) => (r.buckets ?? []).includes(p.bucket));
   if (p.renewal === 'upcoming') rows = rows.filter((r) => r.renewal_upcoming);
+
+  const matchesStatus = (r: Row) => (p.status === 'open' ? !(def.closed ?? []).includes(r[def.statusField]) : !p.status || r[def.statusField] === p.status);
+  const matchesSeverity = (r: Row) => !p.severity || r.severity === p.severity;
+
+  // Each facet counts what choosing that option would return, given the other filters.
+  // Rows are already scoped, so the counts cannot reveal other customers.
+  const facets = { status: countBy(rows.filter(matchesSeverity), def.statusField), severity: countBy(rows.filter(matchesStatus), 'severity') };
+
+  rows = rows.filter((r) => matchesStatus(r) && matchesSeverity(r));
 
   const sort = p.sort || def.defaultSort;
   const dir = p.dir === 'asc' || p.dir === 'desc' ? p.dir : def.defaultSort === 'days_remaining' || def.defaultSort === 'days_to_renewal' ? 'asc' : 'desc';
   const sign = dir === 'asc' ? 1 : -1;
+  const sortValue = (r: Row) => (RANKED_FIELDS.includes(sort) ? (RANK[r[sort]] ?? r[sort]) : r[sort]);
   rows = [...rows].sort((a, b) => {
-    const nullA = a[sort] === null || a[sort] === undefined;
-    const nullB = b[sort] === null || b[sort] === undefined;
-    if (nullA || nullB) return compare(a[sort], b[sort]);
-    return sign * compare(a[sort], b[sort]);
+    const x = sortValue(a);
+    const y = sortValue(b);
+    if (x === null || x === undefined || y === null || y === undefined) return compare(x, y);
+    return sign * compare(x, y);
   });
 
   const total = rows.length;
