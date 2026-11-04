@@ -1,0 +1,138 @@
+@import "tailwindcss";
+
+:root,
+[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #121216;
+  --surface: #1a1a20;
+  --surface-2: #23232b;
+  --line: #33333d;
+  --fg: #ededf2;
+  --muted: #a6a6b3;
+  --primary: #9d85ff;
+  --primary-strong: #7c5cff;
+  --on-primary: #ffffff;
+  --ok: #4ade80;
+  --ok-bg: #12301f;
+  --warn: #fbbf24;
+  --warn-bg: #352809;
+  --bad: #f87171;
+  --bad-bg: #3a1616;
+  --info: #7dd3fc;
+  --info-bg: #10293a;
+  --unknown: #c0c0cc;
+  --unknown-bg: #2c2c35;
+  --accent-bg: #2a2348;
+}
+
+[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f4f4f7;
+  --surface: #ffffff;
+  --surface-2: #ececf2;
+  --line: #d4d4de;
+  --fg: #1a1a22;
+  --muted: #5a5a68;
+  --primary: #5b3fd6;
+  --primary-strong: #5b3fd6;
+  --on-primary: #ffffff;
+  --ok: #116b37;
+  --ok-bg: #dcf5e6;
+  --warn: #855300;
+  --warn-bg: #fdf0cf;
+  --bad: #b01f1f;
+  --bad-bg: #fde3e3;
+  --info: #0b5f8a;
+  --info-bg: #dcf0fb;
+  --unknown: #4c4c5a;
+  --unknown-bg: #e4e4ea;
+  --accent-bg: #ebe6ff;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-line: var(--line);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-primary: var(--primary);
+  --color-primary-strong: var(--primary-strong);
+  --color-on-primary: var(--on-primary);
+  --color-ok: var(--ok);
+  --color-ok-bg: var(--ok-bg);
+  --color-warn: var(--warn);
+  --color-warn-bg: var(--warn-bg);
+  --color-bad: var(--bad);
+  --color-bad-bg: var(--bad-bg);
+  --color-info: var(--info);
+  --color-info-bg: var(--info-bg);
+  --color-unknown: var(--unknown);
+  --color-unknown-bg: var(--unknown-bg);
+  --color-accent-bg: var(--accent-bg);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+  border-radius: 3px;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+input,
+select,
+textarea {
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+select {
+  max-width: 190px;
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .drawer-panel {
+    animation: drawer-in 140ms ease-out;
+  }
+}
+
+@keyframes drawer-in {
+  from {
+    transform: translateX(16px);
+    opacity: 0.6;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
